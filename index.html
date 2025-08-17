@@ -1,717 +1,560 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>TaskFlow - Smart Task Management</title>
+import React, { useState, useEffect } from 'react';
+import { Plus, X, Check, ArrowLeft } from 'lucide-react';
+
+const EisenhowerTodoApp = () => {
+  const [tasks, setTasks] = useState({
+    urgent_important: [],
+    not_urgent_important: [],
+    urgent_not_important: [],
+    not_urgent_not_important: []
+  });
+  
+  const [newTask, setNewTask] = useState('');
+  const [newTaskDate, setNewTaskDate] = useState('');
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [currentView, setCurrentView] = useState('active');
+  const [completedTasks, setCompletedTasks] = useState([]);
+  const [installPrompt, setInstallPrompt] = useState(null);
+
+  // Handle PWA installation
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     
-    <!-- PWA Meta Tags -->
-    <meta name="description" content="Smart time-based task management app with automatic categorization">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="TaskFlow">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="theme-color" content="#3b82f6">
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  // Handle URL parameters for shortcuts
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const action = urlParams.get('action');
+    const view = urlParams.get('view');
     
-    <!-- PWA Links -->
-    <link rel="manifest" href="./manifest.json">
-    <link rel="apple-touch-icon" href="./icon-192x192.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192x192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="./icon-512x512.png">
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- React and Babel -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-    
-    <style>
-        /* Prevent zoom on mobile */
-        input[type="text"], input[type="date"], textarea, select {
-            font-size: 16px;
-        }
-        
-        /* Hide scrollbars for a cleaner app feel */
-        ::-webkit-scrollbar {
-            width: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #f1f5f9;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 3px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
-        }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
+    if (action === 'add') {
+      setShowAddForm(true);
+    }
+    if (view === 'completed') {
+      setCurrentView('completed');
+    }
+  }, []);
 
-    <script type="text/babel">
-        const { useState, useEffect } = React;
-        const { Plus, X, Check, ArrowLeft } = lucide;
+  // Register service worker
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then((registration) => {
+            console.log('ServiceWorker registered successfully:', registration.scope);
+          })
+          .catch((error) => {
+            console.log('ServiceWorker registration failed:', error);
+          });
+      });
+    }
+  }, []);
 
-        const TaskFlowApp = () => {
-            const [tasks, setTasks] = useState({
-                urgent_important: [],
-                not_urgent_important: [],
-                urgent_not_important: [],
-                not_urgent_not_important: []
-            });
-            
-            const [newTask, setNewTask] = useState('');
-            const [newTaskDate, setNewTaskDate] = useState('');
-            const [showAddForm, setShowAddForm] = useState(false);
-            const [lastUpdate, setLastUpdate] = useState(new Date());
-            const [currentView, setCurrentView] = useState('active');
-            const [completedTasks, setCompletedTasks] = useState([]);
-            const [installPrompt, setInstallPrompt] = useState(null);
+  const installApp = async () => {
+    if (installPrompt) {
+      installPrompt.prompt();
+      const { outcome } = await installPrompt.userChoice;
+      if (outcome === 'accepted') {
+        console.log('User accepted the install prompt');
+      }
+      setInstallPrompt(null);
+    }
+  };
 
-            const quadrants = {
-                urgent_important: {
-                    title: 'ASAP',
-                    subtitle: 'Do Immediately',
-                    color: 'bg-gradient-to-br from-red-50 to-pink-50 border-red-100',
-                    headerColor: 'bg-gradient-to-r from-red-500 to-pink-500',
-                    description: 'Critical tasks that need immediate attention'
-                },
-                not_urgent_important: {
-                    title: 'Within the Week',
-                    subtitle: 'Plan & Schedule',
-                    color: 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-100',
-                    headerColor: 'bg-gradient-to-r from-blue-500 to-indigo-500',
-                    description: 'Important tasks to complete this week'
-                },
-                urgent_not_important: {
-                    title: 'Within the Month',
-                    subtitle: 'Lower Priority',
-                    color: 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-100',
-                    headerColor: 'bg-gradient-to-r from-amber-500 to-orange-500',
-                    description: 'Tasks to handle when time allows'
-                },
-                not_urgent_not_important: {
-                    title: 'No Timeline',
-                    subtitle: 'Someday/Maybe',
-                    color: 'bg-gradient-to-br from-slate-50 to-gray-50 border-slate-100',
-                    headerColor: 'bg-gradient-to-r from-slate-500 to-gray-500',
-                    description: 'Ideas and tasks without specific deadlines'
-                }
-            };
+  const quadrants = {
+    urgent_important: {
+      title: 'ASAP',
+      subtitle: 'Do Immediately',
+      color: 'bg-gradient-to-br from-red-50 to-pink-50 border-red-100',
+      headerColor: 'bg-gradient-to-r from-red-500 to-pink-500',
+      description: 'Critical tasks that need immediate attention'
+    },
+    not_urgent_important: {
+      title: 'Within the Week',
+      subtitle: 'Plan & Schedule',
+      color: 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-100',
+      headerColor: 'bg-gradient-to-r from-blue-500 to-indigo-500',
+      description: 'Important tasks to complete this week'
+    },
+    urgent_not_important: {
+      title: 'Within the Month',
+      subtitle: 'Lower Priority',
+      color: 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-100',
+      headerColor: 'bg-gradient-to-r from-amber-500 to-orange-500',
+      description: 'Tasks to handle when time allows'
+    },
+    not_urgent_not_important: {
+      title: 'No Timeline',
+      subtitle: 'Someday/Maybe',
+      color: 'bg-gradient-to-br from-slate-50 to-gray-50 border-slate-100',
+      headerColor: 'bg-gradient-to-r from-slate-500 to-gray-500',
+      description: 'Ideas and tasks without specific deadlines'
+    }
+  };
 
-            // Handle PWA installation
-            useEffect(() => {
-                const handleBeforeInstallPrompt = (e) => {
-                    e.preventDefault();
-                    setInstallPrompt(e);
-                };
-
-                window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-                
-                return () => {
-                    window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-                };
-            }, []);
-
-            // Handle URL parameters for shortcuts
-            useEffect(() => {
-                const urlParams = new URLSearchParams(window.location.search);
-                const action = urlParams.get('action');
-                const view = urlParams.get('view');
-                
-                if (action === 'add') {
-                    setShowAddForm(true);
-                }
-                if (view === 'completed') {
-                    setCurrentView('completed');
-                }
-            }, []);
-
-            // Auto-recategorize tasks
-            useEffect(() => {
-                const recategorizeTasks = () => {
-                    setTasks(prevTasks => {
-                        const newTasks = {
-                            urgent_important: [],
-                            not_urgent_important: [],
-                            urgent_not_important: [],
-                            not_urgent_not_important: []
-                        };
-
-                        Object.values(prevTasks).flat().forEach(task => {
-                            const correctQuadrant = getQuadrantFromDate(task.dueDate);
-                            newTasks[correctQuadrant].push(task);
-                        });
-
-                        return newTasks;
-                    });
-                    setLastUpdate(new Date());
-                };
-
-                recategorizeTasks();
-                const interval = setInterval(recategorizeTasks, 60000);
-                return () => clearInterval(interval);
-            }, []);
-
-            const getQuadrantFromDate = (dueDate) => {
-                if (!dueDate) return 'not_urgent_not_important';
-                
-                const today = new Date();
-                const due = new Date(dueDate);
-                const diffTime = due.getTime() - today.getTime();
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                
-                if (diffDays <= 1) return 'urgent_important';
-                if (diffDays <= 7) return 'not_urgent_important';
-                if (diffDays <= 30) return 'urgent_not_important';
-                return 'not_urgent_not_important';
-            };
-
-            const installApp = async () => {
-                if (installPrompt) {
-                    installPrompt.prompt();
-                    const { outcome } = await installPrompt.userChoice;
-                    if (outcome === 'accepted') {
-                        console.log('User accepted the install prompt');
-                    }
-                    setInstallPrompt(null);
-                }
-            };
-
-            const addTask = () => {
-                if (newTask.trim()) {
-                    const quadrant = getQuadrantFromDate(newTaskDate);
-                    const task = {
-                        id: Date.now(),
-                        text: newTask,
-                        dueDate: newTaskDate,
-                        completed: false
-                    };
-                    
-                    setTasks(prev => ({
-                        ...prev,
-                        [quadrant]: [...prev[quadrant], task]
-                    }));
-                    
-                    setNewTask('');
-                    setNewTaskDate('');
-                    setShowAddForm(false);
-                }
-            };
-
-            const deleteTask = (quadrant, taskId) => {
-                setTasks(prev => ({
-                    ...prev,
-                    [quadrant]: prev[quadrant].filter(task => task.id !== taskId)
-                }));
-            };
-
-            const toggleComplete = (quadrant, taskId) => {
-                const task = tasks[quadrant].find(t => t.id === taskId);
-                if (task) {
-                    const completedTask = {
-                        ...task,
-                        completed: true,
-                        completedAt: new Date(),
-                        originalQuadrant: quadrant
-                    };
-                    
-                    setCompletedTasks(prev => [completedTask, ...prev]);
-                    
-                    setTasks(prev => ({
-                        ...prev,
-                        [quadrant]: prev[quadrant].filter(t => t.id !== taskId)
-                    }));
-                }
-            };
-
-            const uncompleteTask = (taskId) => {
-                const task = completedTasks.find(t => t.id === taskId);
-                if (task) {
-                    const activeTask = { ...task, completed: false };
-                    delete activeTask.completedAt;
-                    delete activeTask.originalQuadrant;
-                    
-                    const correctQuadrant = getQuadrantFromDate(activeTask.dueDate);
-                    
-                    setTasks(prev => ({
-                        ...prev,
-                        [correctQuadrant]: [...prev[correctQuadrant], activeTask]
-                    }));
-                    
-                    setCompletedTasks(prev => prev.filter(t => t.id !== taskId));
-                }
-            };
-
-            const deleteCompletedTask = (taskId) => {
-                setCompletedTasks(prev => prev.filter(t => t.id !== taskId));
-            };
-
-            const TaskCard = ({ task, quadrant }) => {
-                const getDaysUntilDue = (dueDate) => {
-                    if (!dueDate) return null;
-                    const today = new Date();
-                    const due = new Date(dueDate);
-                    const diffTime = due.getTime() - today.getTime();
-                    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                };
-
-                const formatDueDate = (dueDate) => {
-                    if (!dueDate) return null;
-                    const date = new Date(dueDate);
-                    return date.toLocaleDateString('en-US', { 
-                        month: 'short', 
-                        day: 'numeric',
-                        year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
-                    });
-                };
-
-                const daysUntil = getDaysUntilDue(task.dueDate);
-                const isOverdue = daysUntil !== null && daysUntil < 0;
-                const isDueToday = daysUntil === 0;
-
-                return React.createElement('div', {
-                    className: 'bg-white/80 backdrop-blur-sm rounded-lg shadow-sm border border-white/50 p-3 hover:shadow-md transition-all duration-200'
-                }, [
-                    React.createElement('div', {
-                        key: 'content',
-                        className: 'flex items-start justify-between'
-                    }, [
-                        React.createElement('div', {
-                            key: 'text',
-                            className: 'flex-1 min-w-0'
-                        }, [
-                            React.createElement('span', {
-                                key: 'taskText',
-                                className: 'block text-slate-800 font-medium leading-snug'
-                            }, task.text),
-                            task.dueDate && React.createElement('div', {
-                                key: 'dateInfo',
-                                className: 'flex items-center gap-2 mt-2'
-                            }, [
-                                React.createElement('span', {
-                                    key: 'date',
-                                    className: `text-xs px-2 py-1 rounded-full font-semibold ${
-                                        isOverdue ? 'bg-red-100 text-red-700' :
-                                        isDueToday ? 'bg-orange-100 text-orange-700' :
-                                        daysUntil <= 3 ? 'bg-amber-100 text-amber-700' :
-                                        'bg-slate-100 text-slate-600'
-                                    }`
-                                }, formatDueDate(task.dueDate)),
-                                React.createElement('span', {
-                                    key: 'countdown',
-                                    className: 'text-xs text-slate-500 font-medium'
-                                }, isOverdue ? `${Math.abs(daysUntil)} days overdue` :
-                                   isDueToday ? 'Due today' :
-                                   daysUntil === 1 ? 'Due tomorrow' :
-                                   `${daysUntil} days left`)
-                            ])
-                        ]),
-                        React.createElement('div', {
-                            key: 'buttons',
-                            className: 'flex gap-1 ml-3'
-                        }, [
-                            React.createElement('button', {
-                                key: 'complete',
-                                onClick: () => toggleComplete(quadrant, task.id),
-                                className: 'p-2 rounded-lg text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition-all duration-200',
-                                title: 'Mark as complete'
-                            }, React.createElement(Check, { size: 16 })),
-                            React.createElement('button', {
-                                key: 'delete',
-                                onClick: () => deleteTask(quadrant, task.id),
-                                className: 'p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-all duration-200',
-                                title: 'Delete task'
-                            }, React.createElement(X, { size: 16 }))
-                        ])
-                    ])
-                ]);
-            };
-
-            const CompletedTaskCard = ({ task }) => {
-                const formatCompletedDate = (date) => {
-                    return new Date(date).toLocaleDateString('en-US', { 
-                        month: 'short', 
-                        day: 'numeric',
-                        hour: 'numeric',
-                        minute: '2-digit'
-                    });
-                };
-
-                return React.createElement('div', {
-                    className: 'bg-white/80 backdrop-blur-sm rounded-lg shadow-sm border border-emerald-100 p-3 hover:shadow-md transition-all duration-200'
-                }, [
-                    React.createElement('div', {
-                        key: 'content',
-                        className: 'flex items-start justify-between'
-                    }, [
-                        React.createElement('div', {
-                            key: 'text',
-                            className: 'flex-1 min-w-0'
-                        }, [
-                            React.createElement('span', {
-                                key: 'taskText',
-                                className: 'block text-slate-600 line-through font-medium leading-snug'
-                            }, task.text),
-                            React.createElement('div', {
-                                key: 'completedInfo',
-                                className: 'flex items-center gap-2 mt-2'
-                            }, [
-                                React.createElement('span', {
-                                    key: 'completed',
-                                    className: 'text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-semibold'
-                                }, `✓ Completed ${formatCompletedDate(task.completedAt)}`),
-                                task.dueDate && React.createElement('span', {
-                                    key: 'wasDue',
-                                    className: 'text-xs text-slate-500 font-medium'
-                                }, `Was due: ${new Date(task.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`)
-                            ])
-                        ]),
-                        React.createElement('div', {
-                            key: 'buttons',
-                            className: 'flex gap-1 ml-3'
-                        }, [
-                            React.createElement('button', {
-                                key: 'uncomplete',
-                                onClick: () => uncompleteTask(task.id),
-                                className: 'p-2 rounded-lg text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-all duration-200',
-                                title: 'Mark as incomplete'
-                            }, React.createElement(ArrowLeft, { size: 16 })),
-                            React.createElement('button', {
-                                key: 'delete',
-                                onClick: () => deleteCompletedTask(task.id),
-                                className: 'p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-all duration-200',
-                                title: 'Delete permanently'
-                            }, React.createElement(X, { size: 16 }))
-                        ])
-                    ])
-                ]);
-            };
-
-            return React.createElement('div', {
-                className: 'min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-4 md:p-6'
-            }, [
-                React.createElement('div', {
-                    key: 'container',
-                    className: 'max-w-7xl mx-auto'
-                }, [
-                    React.createElement('div', {
-                        key: 'header',
-                        className: 'mb-8 text-center'
-                    }, [
-                        React.createElement('div', {
-                            key: 'titleRow',
-                            className: 'flex items-center justify-center gap-4 mb-4'
-                        }, [
-                            React.createElement('h1', {
-                                key: 'title',
-                                className: 'text-4xl font-bold text-slate-800 tracking-tight'
-                            }, 'TaskFlow'),
-                            installPrompt && React.createElement('button', {
-                                key: 'install',
-                                onClick: installApp,
-                                className: 'px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-medium text-sm shadow-lg transition-all',
-                                title: 'Install TaskFlow as an app'
-                            }, '📱 Install App')
-                        ]),
-                        React.createElement('p', {
-                            key: 'subtitle',
-                            className: 'text-slate-600 text-lg'
-                        }, 'Smart time-based task management'),
-                        React.createElement('p', {
-                            key: 'lastUpdate',
-                            className: 'text-xs text-slate-400 mt-2'
-                        }, `Last updated: ${lastUpdate.toLocaleTimeString()}`)
-                    ]),
-                    
-                    // Tab Navigation
-                    React.createElement('div', {
-                        key: 'tabs',
-                        className: 'mb-8'
-                    }, [
-                        React.createElement('div', {
-                            key: 'tabContainer',
-                            className: 'bg-white/70 backdrop-blur-sm rounded-2xl p-2 shadow-lg border border-white/20'
-                        }, [
-                            React.createElement('div', {
-                                key: 'tabButtons',
-                                className: 'flex gap-2'
-                            }, [
-                                React.createElement('button', {
-                                    key: 'activeTab',
-                                    onClick: () => setCurrentView('active'),
-                                    className: `flex-1 py-4 px-6 text-center font-semibold rounded-xl transition-all duration-200 ${
-                                        currentView === 'active'
-                                            ? 'bg-blue-500 text-white shadow-lg shadow-blue-200'
-                                            : 'text-slate-600 hover:bg-white/50 hover:text-slate-800'
-                                    }`
-                                }, [
-                                    React.createElement('div', {
-                                        key: 'activeContent',
-                                        className: 'flex items-center justify-center gap-2'
-                                    }, [
-                                        React.createElement('span', { key: 'activeText' }, 'Active Tasks'),
-                                        React.createElement('span', {
-                                            key: 'activeCount',
-                                            className: 'bg-white/20 px-2 py-1 rounded-lg text-sm'
-                                        }, Object.values(tasks).flat().length)
-                                    ])
-                                ]),
-                                React.createElement('button', {
-                                    key: 'completedTab',
-                                    onClick: () => setCurrentView('completed'),
-                                    className: `flex-1 py-4 px-6 text-center font-semibold rounded-xl transition-all duration-200 ${
-                                        currentView === 'completed'
-                                            ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200'
-                                            : 'text-slate-600 hover:bg-white/50 hover:text-slate-800'
-                                    }`
-                                }, [
-                                    React.createElement('div', {
-                                        key: 'completedContent',
-                                        className: 'flex items-center justify-center gap-2'
-                                    }, [
-                                        React.createElement('span', { key: 'completedText' }, 'Completed'),
-                                        React.createElement('span', {
-                                            key: 'completedCount',
-                                            className: 'bg-white/20 px-2 py-1 rounded-lg text-sm'
-                                        }, completedTasks.length)
-                                    ])
-                                ])
-                            ])
-                        ])
-                    ]),
-
-                    // Active Tasks View
-                    currentView === 'active' && React.createElement(React.Fragment, { key: 'activeView' }, [
-                        // Add Task Form
-                        React.createElement('div', {
-                            key: 'addForm',
-                            className: 'mb-8'
-                        }, [
-                            React.createElement('div', {
-                                key: 'formContainer',
-                                className: 'bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6'
-                            }, [
-                                !showAddForm ? React.createElement('button', {
-                                    key: 'addButton',
-                                    onClick: () => setShowAddForm(true),
-                                    className: 'flex items-center gap-3 text-blue-600 hover:text-blue-700 font-semibold text-lg transition-colors group'
-                                }, [
-                                    React.createElement('div', {
-                                        key: 'addIcon',
-                                        className: 'p-2 bg-blue-100 rounded-xl group-hover:bg-blue-200 transition-colors'
-                                    }, React.createElement(Plus, { size: 20 })),
-                                    'Add New Task'
-                                ]) : React.createElement('div', {
-                                    key: 'addFormContent',
-                                    className: 'space-y-6'
-                                }, [
-                                    React.createElement('input', {
-                                        key: 'taskInput',
-                                        type: 'text',
-                                        value: newTask,
-                                        onChange: (e) => setNewTask(e.target.value),
-                                        placeholder: 'What needs to be done?',
-                                        className: 'w-full p-4 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg placeholder-slate-400 transition-all',
-                                        onKeyPress: (e) => e.key === 'Enter' && addTask(),
-                                        autoFocus: true
-                                    }),
-                                    React.createElement('div', {
-                                        key: 'formActions',
-                                        className: 'flex flex-col md:flex-row gap-4'
-                                    }, [
-                                        React.createElement('div', {
-                                            key: 'dateSection',
-                                            className: 'flex-1'
-                                        }, [
-                                            React.createElement('label', {
-                                                key: 'dateLabel',
-                                                className: 'block text-sm font-semibold text-slate-700 mb-2'
-                                            }, 'Due Date (optional)'),
-                                            React.createElement('input', {
-                                                key: 'dateInput',
-                                                type: 'date',
-                                                value: newTaskDate,
-                                                onChange: (e) => setNewTaskDate(e.target.value),
-                                                className: 'w-full p-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all',
-                                                min: new Date().toISOString().split('T')[0]
-                                            }),
-                                            React.createElement('p', {
-                                                key: 'datePreview',
-                                                className: 'text-sm text-slate-500 mt-2 font-medium'
-                                            }, newTaskDate ? `Will be placed in: ${getQuadrantFromDate(newTaskDate) === 'urgent_important' ? 'ASAP' : 
-                                                getQuadrantFromDate(newTaskDate) === 'not_urgent_important' ? 'Within the Week' :
-                                                getQuadrantFromDate(newTaskDate) === 'urgent_not_important' ? 'Within the Month' : 'No Timeline'}` : 'No date = No Timeline')
-                                        ]),
-                                        React.createElement('div', {
-                                            key: 'buttons',
-                                            className: 'flex gap-3'
-                                        }, [
-                                            React.createElement('button', {
-                                                key: 'addTaskBtn',
-                                                onClick: addTask,
-                                                className: 'px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 font-semibold shadow-lg shadow-blue-200 transition-all hover:shadow-xl'
-                                            }, 'Add Task'),
-                                            React.createElement('button', {
-                                                key: 'cancelBtn',
-                                                onClick: () => {
-                                                    setShowAddForm(false);
-                                                    setNewTask('');
-                                                    setNewTaskDate('');
-                                                },
-                                                className: 'px-6 py-3 bg-slate-200 text-slate-700 rounded-xl hover:bg-slate-300 font-semibold transition-colors'
-                                            }, 'Cancel')
-                                        ])
-                                    ])
-                                ])
-                            ])
-                        ]),
-
-                        // Matrix Grid
-                        React.createElement('div', {
-                            key: 'matrix',
-                            className: 'grid grid-cols-1 lg:grid-cols-2 gap-4'
-                        }, Object.entries(quadrants).map(([key, quadrant]) => 
-                            React.createElement('div', {
-                                key: key,
-                                className: `rounded-xl shadow-lg border-2 ${quadrant.color} overflow-hidden backdrop-blur-sm`
-                            }, [
-                                React.createElement('div', {
-                                    key: 'header',
-                                    className: `${quadrant.headerColor} text-white p-4`
-                                }, [
-                                    React.createElement('h2', {
-                                        key: 'title',
-                                        className: 'text-xl font-bold mb-1'
-                                    }, quadrant.title),
-                                    React.createElement('p', {
-                                        key: 'subtitle',
-                                        className: 'text-sm opacity-90 font-medium'
-                                    }, quadrant.subtitle),
-                                    React.createElement('p', {
-                                        key: 'description',
-                                        className: 'text-xs opacity-75 mt-1'
-                                    }, quadrant.description)
-                                ]),
-                                React.createElement('div', {
-                                    key: 'content',
-                                    className: 'p-4 min-h-32'
-                                }, tasks[key].length === 0 ? 
-                                    React.createElement('div', {
-                                        key: 'empty',
-                                        className: 'text-center py-6'
-                                    }, [
-                                        React.createElement('div', {
-                                            key: 'emptyIcon',
-                                            className: 'w-12 h-12 bg-white/50 rounded-full flex items-center justify-center mx-auto mb-3'
-                                        }, React.createElement(Plus, { size: 16, className: 'text-slate-400' })),
-                                        React.createElement('p', {
-                                            key: 'emptyText',
-                                            className: 'text-slate-500 font-medium text-sm'
-                                        }, 'No tasks yet'),
-                                        React.createElement('p', {
-                                            key: 'emptySubtext',
-                                            className: 'text-slate-400 text-xs'
-                                        }, 'Add some tasks to get started')
-                                    ]) :
-                                    React.createElement('div', {
-                                        key: 'taskList',
-                                        className: 'space-y-2'
-                                    }, tasks[key].map(task => 
-                                        React.createElement(TaskCard, {
-                                            key: task.id,
-                                            task: task,
-                                            quadrant: key
-                                        })
-                                    ))
-                                ),
-                                React.createElement('div', {
-                                    key: 'footer',
-                                    className: 'px-4 pb-3'
-                                }, [
-                                    React.createElement('div', {
-                                        key: 'count',
-                                        className: 'bg-white/50 backdrop-blur-sm rounded-lg p-2 text-center'
-                                    }, React.createElement('span', {
-                                        className: 'text-xs font-semibold text-slate-700'
-                                    }, `${tasks[key].length} ${tasks[key].length === 1 ? 'task' : 'tasks'}`))
-                                ])
-                            ])
-                        ))
-                    ]),
-
-                    // Completed Tasks View
-                    currentView === 'completed' && React.createElement('div', {
-                        key: 'completedView',
-                        className: 'bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-8'
-                    }, [
-                        React.createElement('div', {
-                            key: 'completedHeader',
-                            className: 'mb-6'
-                        }, [
-                            React.createElement('h2', {
-                                key: 'completedTitle',
-                                className: 'text-3xl font-bold text-slate-800 mb-2'
-                            }, 'Completed Tasks'),
-                            React.createElement('p', {
-                                key: 'completedSubtitle',
-                                className: 'text-slate-600 text-lg'
-                            }, 'Your accomplishments, sorted by completion date')
-                        ]),
-                        
-                        completedTasks.length === 0 ? 
-                            React.createElement('div', {
-                                key: 'emptyCompleted',
-                                className: 'text-center py-16'
-                            }, [
-                                React.createElement('div', {
-                                    key: 'emptyCompletedIcon',
-                                    className: 'w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6'
-                                }, React.createElement(Check, { size: 32, className: 'text-emerald-600' })),
-                                React.createElement('p', {
-                                    key: 'emptyCompletedText',
-                                    className: 'text-slate-500 text-xl font-semibold mb-2'
-                                }, 'No completed tasks yet'),
-                                React.createElement('p', {
-                                    key: 'emptyCompletedSubtext',
-                                    className: 'text-slate-400'
-                                }, 'Complete some tasks to see your progress here!')
-                            ]) :
-                            React.createElement('div', {
-                                key: 'completedList',
-                                className: 'space-y-3'
-                            }, completedTasks.map(task => 
-                                React.createElement(CompletedTaskCard, {
-                                    key: task.id,
-                                    task: task
-                                })
-                            ))
-                    ])
-                ])
-            ]);
+  // Auto-recategorize tasks when component mounts and every minute
+  useEffect(() => {
+    const recategorizeTasks = () => {
+      setTasks(prevTasks => {
+        const newTasks = {
+          urgent_important: [],
+          not_urgent_important: [],
+          urgent_not_important: [],
+          not_urgent_not_important: []
         };
 
-        // Register Service Worker
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then((registration) => {
-                        console.log('ServiceWorker registered:', registration.scope);
-                    })
-                    .catch((error) => {
-                        console.log('ServiceWorker registration failed:', error);
-                    });
-            });
-        }
+        // Go through all tasks and recategorize them
+        Object.values(prevTasks).flat().forEach(task => {
+          const correctQuadrant = getQuadrantFromDate(task.dueDate);
+          newTasks[correctQuadrant].push(task);
+        });
 
-        ReactDOM.render(React.createElement(TaskFlowApp), document.getElementById('root'));
-    </script>
-</body>
-</html>
+        return newTasks;
+      });
+      setLastUpdate(new Date());
+    };
+
+    // Recategorize on mount
+    recategorizeTasks();
+
+    // Set up interval to recategorize every minute
+    const interval = setInterval(recategorizeTasks, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const getQuadrantFromDate = (dueDate) => {
+    if (!dueDate) return 'not_urgent_not_important';
+    
+    const today = new Date();
+    const due = new Date(dueDate);
+    const diffTime = due.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays <= 1) return 'urgent_important';
+    if (diffDays <= 7) return 'not_urgent_important';
+    if (diffDays <= 30) return 'urgent_not_important';
+    return 'not_urgent_not_important';
+  };
+
+  const addTask = () => {
+    if (newTask.trim()) {
+      const quadrant = getQuadrantFromDate(newTaskDate);
+      const task = {
+        id: Date.now(),
+        text: newTask,
+        dueDate: newTaskDate,
+        completed: false
+      };
+      
+      setTasks(prev => ({
+        ...prev,
+        [quadrant]: [...prev[quadrant], task]
+      }));
+      
+      setNewTask('');
+      setNewTaskDate('');
+      setShowAddForm(false);
+    }
+  };
+
+  const deleteTask = (quadrant, taskId) => {
+    setTasks(prev => ({
+      ...prev,
+      [quadrant]: prev[quadrant].filter(task => task.id !== taskId)
+    }));
+  };
+
+  const toggleComplete = (quadrant, taskId) => {
+    const task = tasks[quadrant].find(t => t.id === taskId);
+    if (task) {
+      const completedTask = {
+        ...task,
+        completed: true,
+        completedAt: new Date(),
+        originalQuadrant: quadrant
+      };
+      
+      setCompletedTasks(prev => [completedTask, ...prev]);
+      
+      setTasks(prev => ({
+        ...prev,
+        [quadrant]: prev[quadrant].filter(t => t.id !== taskId)
+      }));
+    }
+  };
+
+  const uncompleteTask = (taskId) => {
+    const task = completedTasks.find(t => t.id === taskId);
+    if (task) {
+      const activeTask = {
+        ...task,
+        completed: false
+      };
+      delete activeTask.completedAt;
+      delete activeTask.originalQuadrant;
+      
+      const correctQuadrant = getQuadrantFromDate(activeTask.dueDate);
+      
+      setTasks(prev => ({
+        ...prev,
+        [correctQuadrant]: [...prev[correctQuadrant], activeTask]
+      }));
+      
+      setCompletedTasks(prev => prev.filter(t => t.id !== taskId));
+    }
+  };
+
+  const deleteCompletedTask = (taskId) => {
+    setCompletedTasks(prev => prev.filter(t => t.id !== taskId));
+  };
+
+  const TaskCard = ({ task, quadrant }) => {
+    const getDaysUntilDue = (dueDate) => {
+      if (!dueDate) return null;
+      const today = new Date();
+      const due = new Date(dueDate);
+      const diffTime = due.getTime() - today.getTime();
+      return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    };
+
+    const formatDueDate = (dueDate) => {
+      if (!dueDate) return null;
+      const date = new Date(dueDate);
+      return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric',
+        year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+      });
+    };
+
+    const daysUntil = getDaysUntilDue(task.dueDate);
+    const isOverdue = daysUntil !== null && daysUntil < 0;
+    const isDueToday = daysUntil === 0;
+
+    return (
+      <div className="bg-white/80 backdrop-blur-sm rounded-lg shadow-sm border border-white/50 p-3 hover:shadow-md transition-all duration-200">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <span className="block text-slate-800 font-medium leading-snug">
+              {task.text}
+            </span>
+            {task.dueDate && (
+              <div className="flex items-center gap-2 mt-2">
+                <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                  isOverdue ? 'bg-red-100 text-red-700' :
+                  isDueToday ? 'bg-orange-100 text-orange-700' :
+                  daysUntil <= 3 ? 'bg-amber-100 text-amber-700' :
+                  'bg-slate-100 text-slate-600'
+                }`}>
+                  {formatDueDate(task.dueDate)}
+                </span>
+                <span className="text-xs text-slate-500 font-medium">
+                  {isOverdue ? `${Math.abs(daysUntil)} days overdue` :
+                   isDueToday ? 'Due today' :
+                   daysUntil === 1 ? 'Due tomorrow' :
+                   `${daysUntil} days left`}
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="flex gap-1 ml-3">
+            <button
+              onClick={() => toggleComplete(quadrant, task.id)}
+              className="p-2 rounded-lg text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition-all duration-200"
+              title="Mark as complete"
+            >
+              <Check size={16} />
+            </button>
+            <button
+              onClick={() => deleteTask(quadrant, task.id)}
+              className="p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-all duration-200"
+              title="Delete task"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const CompletedTaskCard = ({ task }) => {
+    const formatCompletedDate = (date) => {
+      return new Date(date).toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+    };
+
+    return (
+      <div className="bg-white/80 backdrop-blur-sm rounded-lg shadow-sm border border-emerald-100 p-3 hover:shadow-md transition-all duration-200">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <span className="block text-slate-600 line-through font-medium leading-snug">
+              {task.text}
+            </span>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
+                ✓ Completed {formatCompletedDate(task.completedAt)}
+              </span>
+              {task.dueDate && (
+                <span className="text-xs text-slate-500 font-medium">
+                  Was due: {new Date(task.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-1 ml-3">
+            <button
+              onClick={() => uncompleteTask(task.id)}
+              className="p-2 rounded-lg text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-all duration-200"
+              title="Mark as incomplete"
+            >
+              <ArrowLeft size={16} />
+            </button>
+            <button
+              onClick={() => deleteCompletedTask(task.id)}
+              className="p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-all duration-200"
+              title="Delete permanently"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-4 md:p-6">
+      <div className="max-w-7xl mx-auto">
+        <div className="mb-8 text-center">
+          <h1 className="text-4xl font-bold text-slate-800 mb-3 tracking-tight">TaskFlow</h1>
+          <p className="text-slate-600 text-lg">Smart time-based task management</p>
+          <p className="text-xs text-slate-400 mt-2">
+            Last updated: {lastUpdate.toLocaleTimeString()}
+          </p>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="mb-8">
+          <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-2 shadow-lg border border-white/20">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setCurrentView('active')}
+                className={`flex-1 py-4 px-6 text-center font-semibold rounded-xl transition-all duration-200 ${
+                  currentView === 'active'
+                    ? 'bg-blue-500 text-white shadow-lg shadow-blue-200'
+                    : 'text-slate-600 hover:bg-white/50 hover:text-slate-800'
+                }`}
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <span>Active Tasks</span>
+                  <span className="bg-white/20 px-2 py-1 rounded-lg text-sm">
+                    {Object.values(tasks).flat().length}
+                  </span>
+                </div>
+              </button>
+              <button
+                onClick={() => setCurrentView('completed')}
+                className={`flex-1 py-4 px-6 text-center font-semibold rounded-xl transition-all duration-200 ${
+                  currentView === 'completed'
+                    ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200'
+                    : 'text-slate-600 hover:bg-white/50 hover:text-slate-800'
+                }`}
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <span>Completed</span>
+                  <span className="bg-white/20 px-2 py-1 rounded-lg text-sm">
+                    {completedTasks.length}
+                  </span>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {currentView === 'active' && (
+          <>
+            {/* Add Task Form */}
+            <div className="mb-8">
+              <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
+                {!showAddForm ? (
+                  <button
+                    onClick={() => setShowAddForm(true)}
+                    className="flex items-center gap-3 text-blue-600 hover:text-blue-700 font-semibold text-lg transition-colors group"
+                  >
+                    <div className="p-2 bg-blue-100 rounded-xl group-hover:bg-blue-200 transition-colors">
+                      <Plus size={20} />
+                    </div>
+                    Add New Task
+                  </button>
+                ) : (
+                  <div className="space-y-6">
+                    <input
+                      type="text"
+                      value={newTask}
+                      onChange={(e) => setNewTask(e.target.value)}
+                      placeholder="What needs to be done?"
+                      className="w-full p-4 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg placeholder-slate-400 transition-all"
+                      onKeyPress={(e) => e.key === 'Enter' && addTask()}
+                      autoFocus
+                    />
+                    <div className="flex flex-col md:flex-row gap-4">
+                      <div className="flex-1">
+                        <label className="block text-sm font-semibold text-slate-700 mb-2">
+                          Due Date (optional)
+                        </label>
+                        <input
+                          type="date"
+                          value={newTaskDate}
+                          onChange={(e) => setNewTaskDate(e.target.value)}
+                          className="w-full p-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all"
+                          min={new Date().toISOString().split('T')[0]}
+                        />
+                        <p className="text-sm text-slate-500 mt-2 font-medium">
+                          {newTaskDate ? `Will be placed in: ${getQuadrantFromDate(newTaskDate) === 'urgent_important' ? 'ASAP' : 
+                            getQuadrantFromDate(newTaskDate) === 'not_urgent_important' ? 'Within the Week' :
+                            getQuadrantFromDate(newTaskDate) === 'urgent_not_important' ? 'Within the Month' : 'No Timeline'}` : 'No date = No Timeline'}
+                        </p>
+                      </div>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={addTask}
+                          className="px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 font-semibold shadow-lg shadow-blue-200 transition-all hover:shadow-xl"
+                        >
+                          Add Task
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowAddForm(false);
+                            setNewTask('');
+                            setNewTaskDate('');
+                          }}
+                          className="px-6 py-3 bg-slate-200 text-slate-700 rounded-xl hover:bg-slate-300 font-semibold transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Matrix Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {Object.entries(quadrants).map(([key, quadrant]) => (
+                <div key={key} className={`rounded-xl shadow-lg border-2 ${quadrant.color} overflow-hidden backdrop-blur-sm`}>
+                  <div className={`${quadrant.headerColor} text-white p-4`}>
+                    <h2 className="text-xl font-bold mb-1">{quadrant.title}</h2>
+                    <p className="text-sm opacity-90 font-medium">{quadrant.subtitle}</p>
+                    <p className="text-xs opacity-75 mt-1">{quadrant.description}</p>
+                  </div>
+                  
+                  <div className="p-4 min-h-32">
+                    {tasks[key].length === 0 ? (
+                      <div className="text-center py-6">
+                        <div className="w-12 h-12 bg-white/50 rounded-full flex items-center justify-center mx-auto mb-3">
+                          <Plus size={16} className="text-slate-400" />
+                        </div>
+                        <p className="text-slate-500 font-medium text-sm">No tasks yet</p>
+                        <p className="text-slate-400 text-xs">Add some tasks to get started</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {tasks[key].map(task => (
+                          <TaskCard key={task.id} task={task} quadrant={key} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="px-4 pb-3">
+                    <div className="bg-white/50 backdrop-blur-sm rounded-lg p-2 text-center">
+                      <span className="text-xs font-semibold text-slate-700">
+                        {tasks[key].length} {tasks[key].length === 1 ? 'task' : 'tasks'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {currentView === 'completed' && (
+          <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-8">
+            <div className="mb-6">
+              <h2 className="text-3xl font-bold text-slate-800 mb-2">Completed Tasks</h2>
+              <p className="text-slate-600 text-lg">Your accomplishments, sorted by completion date</p>
+            </div>
+            
+            {completedTasks.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Check size={32} className="text-emerald-600" />
+                </div>
+                <p className="text-slate-500 text-xl font-semibold mb-2">No completed tasks yet</p>
+                <p className="text-slate-400">Complete some tasks to see your progress here!</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {completedTasks.map(task => (
+                  <CompletedTaskCard key={task.id} task={task} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Legend - only show on active tasks view */}
+        {currentView === 'active' && (
+          <div className="mt-8 bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-8">
+            <h3 className="font-bold text-slate-800 mb-6 text-xl">How TaskFlow Works</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+              <div className="p-4 bg-gradient-to-br from-red-50 to-pink-50 rounded-xl border border-red-100">
+                <strong className="text-red-600 text-base">ASAP:</strong>
+                <p className="text-slate-700 mt-1">Tasks due today or tomorrow (0-1 days).</p>
+              </div>
+              <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+                <strong className="text-blue-600 text-base">Within the Week:</strong>
+                <p className="text-slate-700 mt-1">Tasks due within 2-7 days from now.</p>
+              </div>
+              <div className="p-4 bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl border border-amber-100">
+                <strong className="text-amber-600 text-base">Within the Month:</strong>
+                <p className="text-slate-700 mt-1">Tasks due within 8-30 days from now.</p>
+              </div>
+              <div className="p-4 bg-gradient-to-br from-slate-50 to-gray-50 rounded-xl border border-slate-100">
+                <strong className="text-slate-600 text-base">No Timeline:</strong>
+                <p className="text-slate-700 mt-1">Tasks due 31+ days away or without a due date.</p>
+              </div>
+            </div>
+            <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+              <p className="text-sm text-blue-800">
+                <strong>🤖 Smart Auto-Update:</strong> Tasks automatically move between categories as their due dates get closer! 
+                The app recategorizes all tasks every minute, ensuring your most urgent tasks always bubble to the top. 
+                Completed tasks are moved to the "Completed Tasks" tab for a clean workspace.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default EisenhowerTodoApp;
